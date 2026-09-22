@@ -1,0 +1,8 @@
+.DS_Store
+.idea/workspace.xml
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+deploy/.env
+.superpowers/
