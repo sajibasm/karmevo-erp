@@ -1,0 +1,52 @@
+[project]
+name = "erp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ASM MOBARAK HOSSAIN", email = "sajib.cse03@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.141.1",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.14.0",
+    "sqlalchemy>=2.0.54",
+    "uvicorn[standard]>=0.53.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-ra --import-mode=importlib"
+
+[tool.ruff]
+# PEP 8: up to 99 characters for code (the maximum a team may agree on).
+line-length = 99
+target-version = "py313"
+
+[tool.ruff.lint]
+# PEP 8 via pycodestyle (E, W) and pep8-naming (N); plus pyflakes (F),
+# import grouping (I), bugbear (B) and pyupgrade (UP).
+select = ["E", "W", "N", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72  # PEP 8: comments and docstrings wrap at 72
+
+[tool.ruff.lint.per-file-ignores]
+# Migrations alias MigrationColumns as `cols` for readable column lists.
+"migrations/**" = ["N813"]
