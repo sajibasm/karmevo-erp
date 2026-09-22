@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from erp.modules.platform.models import Company
+from erp.modules.platform.models import AuditEvent, Company
 
 
 class CompanyRepository:
@@ -27,3 +27,15 @@ class CompanyRepository:
         items = rows[:limit]
         next_cursor = items[-1].company_id if len(rows) > limit else None
         return items, next_cursor
+
+
+class AuditEventRepository:
+    """Inserts into platform "AuditEvents" (append-only)."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, event: AuditEvent) -> UUID:
+        self._session.add(event)
+        self._session.flush()
+        return event.audit_event_id

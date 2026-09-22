@@ -2,14 +2,17 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy import text as sql
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from erp.core.models import Columns, TenantBase
@@ -64,3 +67,34 @@ class Branch(TenantBase):
     branch_code: Mapped[str] = mapped_column("branchCode", String(32))
     branch_name: Mapped[str] = mapped_column("branchName", String(200))
     created_at: Mapped[datetime] = Columns.created_at()
+
+
+class AuditEvent(TenantBase):
+    """Append-only record of sensitive actions (IAM-04).
+
+    The runtime role may only INSERT and SELECT. actorIdentityId points
+    to registry "Identities" in another database, so it has no FK.
+    """
+
+    __tablename__ = "AuditEvents"
+    __table_args__ = (
+        UniqueConstraint("tenantId", "auditEventId"),
+        CheckConstraint(
+            "\"auditOutcome\" in ('success', 'denied', 'failure')",
+            name="auditOutcome",
+        ),
+        SCHEMA,
+    )
+
+    audit_event_id: Mapped[uuid.UUID] = Columns.uuid_pk("auditEventId")
+    tenant_id: Mapped[uuid.UUID] = Columns.tenant_id()
+    occurred_at: Mapped[datetime] = Columns.timestamp("occurredAt")
+    actor_identity_id: Mapped[uuid.UUID | None] = mapped_column("actorIdentityId")
+    audit_action: Mapped[str] = mapped_column("auditAction", String(100))
+    target_type: Mapped[str] = mapped_column("targetType", String(100))
+    target_id: Mapped[str | None] = mapped_column("targetId", String(100))
+    audit_outcome: Mapped[str] = mapped_column("auditOutcome", String(16))
+    audit_reason: Mapped[str | None] = mapped_column("auditReason", Text)
+    audit_details: Mapped[dict[str, Any]] = mapped_column(
+        "auditDetails", JSONB, server_default=sql("'{}'::jsonb")
+    )
