@@ -19,7 +19,7 @@ from alembic.config import Config
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.pool import NullPool
-from support import APP, OWNER, TEST_AUDIENCE, TEST_ISSUER
+from support import APP, OWNER, RELAY, TEST_AUDIENCE, TEST_ISSUER
 
 from erp.core.db import Database, TenantDbLocator
 from erp.core.security import TokenVerifier
@@ -186,6 +186,18 @@ def router(
     tenant_router = TenantDatabaseRouter(_registry, locator, APP)
     yield tenant_router
     tenant_router.dispose_all()  # before the databases are dropped
+
+
+@pytest.fixture(scope="session")
+def relay_router(
+    _registry: Database,
+    locator: TenantDbLocator,
+    provisioner: TenantProvisioner,
+) -> Iterator[TenantDatabaseRouter]:
+    """Tenant DBs as erp_relay: access to "OutboxEvents" only."""
+    relay = TenantDatabaseRouter(_registry, locator, RELAY)
+    yield relay
+    relay.dispose_all()
 
 
 @pytest.fixture(scope="session")
