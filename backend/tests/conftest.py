@@ -5,20 +5,24 @@ docker compose -f deploy/compose.dev.yml up -d --wait
 """
 
 import os
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
+import jwt
 import pytest
 from alembic import command
 from alembic.config import Config
+from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.pool import NullPool
-from support import APP, OWNER
+from support import APP, OWNER, TEST_AUDIENCE, TEST_ISSUER
 
 from erp.core.db import Database, TenantDbLocator
+from erp.core.security import TokenVerifier
 from erp.modules.platform.models import Company
 from erp.modules.platform.provisioning import TenantProvisioner
 from erp.modules.platform.tenant_db import TenantDatabaseRouter
@@ -224,3 +228,47 @@ def two_tenants(provisioned, router, locator, registry) -> Iterator[SeededTenant
         engine = create_engine(url, poolclass=NullPool)
         truncate_tables(engine, exclude=frozenset({'platform."DatabaseOwners"'}))
         engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def signing_key() -> rsa.RSAPrivateKey:
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+@pytest.fixture(scope="session")
+def verifier(signing_key: rsa.RSAPrivateKey) -> TokenVerifier:
+    public_key = signing_key.public_key()
+    return TokenVerifier(
+        issuer=TEST_ISSUER,
+        audience=TEST_AUDIENCE,
+        algorithms=["RS256"],
+        key_resolver=lambda _token: public_key,
+    )
+
+
+@pytest.fixture(scope="session")
+def make_token(signing_key: rsa.RSAPrivateKey) -> Callable[..., str]:
+    def _make(
+        subject: str | None = "alice",
+        *,
+        issuer: str = TEST_ISSUER,
+        audience: str = TEST_AUDIENCE,
+        expires_in: int = 300,
+        algorithm: str = "RS256",
+        key: object | None = None,
+        **extra: object,
+    ) -> str:
+        now = int(time.time())
+        claims = {
+            "iss": issuer,
+            "aud": audience,
+            "sub": subject,
+            "iat": now,
+            "exp": now + expires_in,
+            **extra,
+        }
+        if subject is None:
+            del claims["sub"]
+        return jwt.encode(claims, key or signing_key, algorithm=algorithm)
+
+    return _make

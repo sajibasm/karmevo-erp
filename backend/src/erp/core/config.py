@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     tenant_db_relay_password: str = "erp_relay_dev"
     tenant_db_owner_user: str = "erp_owner"
     tenant_db_owner_password: str = "erp_owner_dev"
+    oidc_issuer: str = "http://localhost:8180/realms/staff"
+    oidc_audience: str = "erp-api"
+    oidc_jwks_url: str = "http://localhost:8180/realms/staff/protocol/openid-connect/certs"
+    oidc_algorithms: list[str] = ["RS256"]
 
     @classmethod
     @cache
