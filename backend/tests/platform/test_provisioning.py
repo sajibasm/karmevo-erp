@@ -79,6 +79,23 @@ def test_upgrade_all_continues_past_a_missing_database(
     assert broken_row.database_status == "failed"
 
 
+def test_upgrade_all_records_a_tenant_with_an_unknown_server(provisioner, registry):
+    healthy = provisioner.provision(account_number=_number(), tenant_name="Kappa")
+    broken = provisioner.provision(account_number=_number(), tenant_name="Lambda")
+    with registry.platform_session() as s:
+        tenant = s.get(Tenant, broken)
+        tenant.database_server = "eu-2"
+
+    outcomes = {o.tenant_id: o for o in provisioner.upgrade_all()}
+
+    assert outcomes[healthy].error is None
+    assert outcomes[healthy].revision == provisioner.head_revision()
+    assert outcomes[broken].revision is None
+    assert "eu-2" in outcomes[broken].error
+    broken_row = _tenant_row(registry, tenant_id=broken)
+    assert broken_row.database_status == "failed"
+
+
 def test_a_previously_migrated_database_is_never_recreated(provisioner, locator, drop_database):
     tenant_id = provisioner.provision(account_number=_number(), tenant_name="Theta Ltd")
     drop_database(locator.database_name(tenant_id))

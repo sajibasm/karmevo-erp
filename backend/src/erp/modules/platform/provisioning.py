@@ -218,8 +218,8 @@ class TenantProvisioner:
             tenants = TenantRepository(s).with_database_status("ready")
         outcomes = []
         for tenant in tenants:
-            url = self._admin.url(tenant.database_server, tenant.database_name)
             try:
+                url = self._admin.url(tenant.database_server, tenant.database_name)
                 revision = self._migrator.upgrade(url)
             except Exception as exc:
                 self._record(tenant.tenant_id, status="failed", error=exc)
