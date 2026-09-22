@@ -2,6 +2,7 @@
 
 from alembic import context
 
+import erp.model_registry  # noqa: F401
 from erp.core.config import Settings
 from erp.core.migrations import AlembicEnvironment
 from erp.core.models import RegistryBase
