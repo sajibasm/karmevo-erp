@@ -7,9 +7,12 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from erp.modules.platform.registry_models import Identity, Membership, Tenant
 
 
-def _tenant(registry, name):
-    """A registry row only (no database), for registry-level rules."""
-    with registry.platform_session() as s:
+def _tenant(registry_owner, name):
+    """A registry row only (no database), for registry-level rules.
+
+    Inserted as erp_owner: erp_app has no write access to Tenants (I3).
+    """
+    with registry_owner.platform_session() as s:
         tenant = Tenant(
             account_number=f"R{uuid4().hex[:12]}",
             tenant_name=name,
@@ -28,8 +31,8 @@ def _identity(registry, subject="alice"):
         return identity.identity_id
 
 
-def test_new_tenant_starts_in_provisioning_state(registry):
-    tenant_id = _tenant(registry, "Alpha Traders")
+def test_new_tenant_starts_in_provisioning_state(registry, registry_owner):
+    tenant_id = _tenant(registry_owner, "Alpha Traders")
 
     with registry.platform_session() as s:
         tenant = s.get(Tenant, tenant_id)
@@ -37,8 +40,8 @@ def test_new_tenant_starts_in_provisioning_state(registry):
     assert tenant.database_server == "default"
 
 
-def test_memberships_are_isolated_by_tenant_context(registry):
-    a, b = _tenant(registry, "A"), _tenant(registry, "B")
+def test_memberships_are_isolated_by_tenant_context(registry, registry_owner):
+    a, b = _tenant(registry_owner, "A"), _tenant(registry_owner, "B")
     identity_id = _identity(registry)
     with registry.tenant_session(a) as s:
         s.add(Membership(tenant_id=a, identity_id=identity_id))
@@ -52,8 +55,8 @@ def test_memberships_are_isolated_by_tenant_context(registry):
     assert in_b == []
 
 
-def test_cannot_create_membership_for_another_tenant(registry):
-    a, b = _tenant(registry, "A"), _tenant(registry, "B")
+def test_cannot_create_membership_for_another_tenant(registry, registry_owner):
+    a, b = _tenant(registry_owner, "A"), _tenant(registry_owner, "B")
     identity_id = _identity(registry)
 
     with pytest.raises(DBAPIError, match="row-level security"):
@@ -62,8 +65,8 @@ def test_cannot_create_membership_for_another_tenant(registry):
             s.flush()
 
 
-def test_identity_lists_own_memberships_without_tenant_context(registry):
-    a = _tenant(registry, "A")
+def test_identity_lists_own_memberships_without_tenant_context(registry, registry_owner):
+    a = _tenant(registry_owner, "A")
     identity_id = _identity(registry)
     with registry.tenant_session(a) as s:
         s.add(Membership(tenant_id=a, identity_id=identity_id))
@@ -82,3 +85,27 @@ def test_identity_is_unique_per_issuer_and_subject(registry):
 
     with pytest.raises(IntegrityError):
         _identity(registry, "alice")
+
+
+def test_erp_app_cannot_insert_tenants(registry):
+    """Only the operator CLI (erp_owner) places tenants (I3)."""
+    with pytest.raises(DBAPIError, match="permission denied"):
+        with registry.platform_session() as s:
+            s.add(
+                Tenant(
+                    account_number=f"X{uuid4().hex[:12]}",
+                    tenant_name="Rogue Ltd",
+                    database_name=f"unprovisioned_{uuid4().hex}",
+                )
+            )
+            s.flush()
+
+
+def test_erp_app_cannot_update_tenants(registry, registry_owner):
+    tenant_id = _tenant(registry_owner, "Immutable Ltd")
+
+    with pytest.raises(DBAPIError, match="permission denied"):
+        with registry.platform_session() as s:
+            tenant = s.get(Tenant, tenant_id)
+            tenant.tenant_name = "Renamed Ltd"
+            s.flush()

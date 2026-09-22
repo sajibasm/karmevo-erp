@@ -79,10 +79,12 @@ def test_upgrade_all_continues_past_a_missing_database(
     assert broken_row.database_status == "failed"
 
 
-def test_upgrade_all_records_a_tenant_with_an_unknown_server(provisioner, registry):
+def test_upgrade_all_records_a_tenant_with_an_unknown_server(
+    provisioner, registry, registry_owner
+):
     healthy = provisioner.provision(account_number=_number(), tenant_name="Kappa")
     broken = provisioner.provision(account_number=_number(), tenant_name="Lambda")
-    with registry.platform_session() as s:
+    with registry_owner.platform_session() as s:
         tenant = s.get(Tenant, broken)
         tenant.database_server = "eu-2"
 

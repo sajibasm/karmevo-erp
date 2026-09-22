@@ -1,10 +1,12 @@
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 from support import TEST_ISSUER, bearer
 
 from erp.app import ApplicationFactory
 from erp.modules.platform.models import Company
-from erp.modules.platform.registry_models import Identity, Membership
+from erp.modules.platform.registry_models import Identity, Membership, Tenant
 
 
 @pytest.fixture
@@ -111,6 +113,54 @@ def test_multi_tenant_user_must_select_then_reads_that_database(
 @pytest.mark.parametrize("subject", ["carol", "dave"], ids=["no-membership", "suspended"])
 def test_users_without_active_membership_are_denied(client, make_token, people, subject):
     response = _companies(client, make_token(subject))
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "TENANT_ACCESS_DENIED"
+
+
+def test_membership_in_a_suspended_tenant_is_denied(client, registry, registry_owner, make_token):
+    with registry_owner.platform_session() as s:
+        tenant = Tenant(
+            account_number=f"S{uuid4().hex[:12]}",
+            tenant_name="Suspended Traders",
+            database_name=f"unprovisioned_{uuid4().hex}",
+            tenant_status="suspended",
+        )
+        s.add(tenant)
+        s.flush()
+        tenant_id = tenant.tenant_id
+    with registry.platform_session() as s:
+        identity = Identity(issuer=TEST_ISSUER, subject="erin")
+        s.add(identity)
+        s.flush()
+        identity_id = identity.identity_id
+    with registry.tenant_session(tenant_id) as s:
+        s.add(Membership(tenant_id=tenant_id, identity_id=identity_id))
+
+    response = _companies(client, make_token("erin"))
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "TENANT_ACCESS_DENIED"
+
+
+def test_buyer_only_membership_is_denied_on_staff_endpoint(
+    client, registry, make_token, two_tenants
+):
+    with registry.platform_session() as s:
+        identity = Identity(issuer=TEST_ISSUER, subject="frank")
+        s.add(identity)
+        s.flush()
+        identity_id = identity.identity_id
+    with registry.tenant_session(two_tenants.a) as s:
+        s.add(
+            Membership(
+                tenant_id=two_tenants.a,
+                identity_id=identity_id,
+                membership_kind="buyer",
+            )
+        )
+
+    response = _companies(client, make_token("frank"))
 
     assert response.status_code == 403
     assert response.json()["code"] == "TENANT_ACCESS_DENIED"

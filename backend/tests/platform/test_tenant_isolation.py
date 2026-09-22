@@ -93,8 +93,8 @@ def test_unknown_tenant_is_not_found(router):
         router.for_tenant(uuid4())
 
 
-def test_tenant_without_ready_database_is_unavailable(router, registry):
-    with registry.platform_session() as s:
+def test_tenant_without_ready_database_is_unavailable(router, registry_owner):
+    with registry_owner.platform_session() as s:
         tenant = Tenant(
             account_number=f"U{uuid4().hex[:12]}",
             tenant_name="Pending Ltd",

@@ -36,7 +36,9 @@ class Cli:
 
     def run(self, argv: list[str] | None = None) -> int:
         args = self._parser().parse_args(argv)
-        registry = Database(self._settings.registry_database_url)
+        # erp_app has no write access to registry."Tenants" (I3); the
+        # operator CLI runs as erp_owner instead.
+        registry = Database(self._settings.registry_migration_database_url)
         try:
             if args.command in self.MODULE_COMMANDS:
                 return self._change_module(args, registry)

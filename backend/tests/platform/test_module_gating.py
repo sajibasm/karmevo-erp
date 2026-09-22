@@ -5,6 +5,7 @@ from erp.app import ApplicationFactory
 from erp.core.controller import Controller
 from erp.core.modules import ModuleCatalog, ModuleManifest
 from erp.module_catalog import InstalledModules
+from erp.modules.platform.module_state import TenantModules
 from erp.modules.platform.registry_models import Identity, Membership
 
 
@@ -20,7 +21,7 @@ class DemoController(Controller):
 
 
 def test_every_route_of_a_disabled_module_is_rejected(
-    registry, router, verifier, make_token, two_tenants
+    registry, registry_owner, router, verifier, make_token, two_tenants
 ):
     demo = ModuleManifest("demo", "Demo", ("platform",), controllers=(DemoController,))
     catalog = ModuleCatalog([*InstalledModules.MANIFESTS, demo])
@@ -36,7 +37,8 @@ def test_every_route_of_a_disabled_module_is_rejected(
     with registry.tenant_session(two_tenants.a) as s:
         s.add(Membership(tenant_id=two_tenants.a, identity_id=identity_id))
     headers = bearer(make_token("alice"))
-    modules = app.state.tenant_modules
+    # Enable/disable only ever runs operator-side, as erp_owner (I3).
+    modules = TenantModules(registry_owner, catalog)
 
     disabled = client.get("/api/v1/demo/ping", headers=headers)
     modules.enable(two_tenants.a, "demo")

@@ -94,6 +94,19 @@ def registry(_registry: Database, registry_owner_engine: Engine) -> Iterator[Dat
     truncate_tables(registry_owner_engine, exclude=frozenset({'registry."Tenants"'}))
 
 
+@pytest.fixture(scope="session")
+def registry_owner(registry_owner_engine: Engine) -> Iterator[Database]:
+    """Registry DB as erp_owner.
+
+    Only the operator writes registry."Tenants" (I3); tests that need
+    to create or mutate tenant rows directly use this instead of the
+    erp_app-scoped `registry` fixture.
+    """
+    database = Database(REGISTRY_OWNER_URL)
+    yield database
+    database.dispose()
+
+
 @pytest.fixture
 def single_connection_registry(
     registry_owner_engine: Engine,
@@ -139,11 +152,14 @@ def _drop_test_tenant_databases(locator: TenantDbLocator) -> None:
 
 
 @pytest.fixture(scope="session")
-def provisioner(_registry: Database, locator: TenantDbLocator) -> Iterator[TenantProvisioner]:
-    """Provision real erp_test_t_* databases; dropped at session end."""
+def provisioner(registry_owner: Database, locator: TenantDbLocator) -> Iterator[TenantProvisioner]:
+    """Provision real erp_test_t_* databases; dropped at session end.
+
+    Writes registry."Tenants" as erp_owner (I3), matching the CLI.
+    """
     _drop_test_tenant_databases(locator)  # leftovers from aborted runs
     yield TenantProvisioner.create(
-        _registry,
+        registry_owner,
         locator,
         owner=OWNER,
         runtime_roles=["erp_app", "erp_relay"],
@@ -293,6 +309,7 @@ def cli_env(monkeypatch):
     from erp.core.config import Settings
 
     monkeypatch.setenv("ERP_REGISTRY_DATABASE_URL", REGISTRY_APP_URL)
+    monkeypatch.setenv("ERP_REGISTRY_MIGRATION_DATABASE_URL", REGISTRY_OWNER_URL)
     monkeypatch.setenv("ERP_TENANT_DB_PREFIX", TENANT_DB_PREFIX)
     monkeypatch.setenv("ERP_TENANT_DB_SERVERS", json.dumps(TENANT_DB_SERVERS))
     Settings.load.cache_clear()

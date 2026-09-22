@@ -1,8 +1,13 @@
-from typing import Any
+import logging
+from http import HTTPStatus
+from typing import Any, ClassVar
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger(__name__)
 
 
 class DomainError(Exception):
@@ -68,10 +73,19 @@ class Problem:
 class ErrorHandlers:
     """Register the problem+json exception handlers on an app."""
 
+    # Status codes whose default reason phrase makes a poor `code`
+    # (spaces, punctuation); the rest fall back to `HTTP_<status>`.
+    STATUS_CODES: ClassVar[dict[int, str]] = {
+        404: "NOT_FOUND",
+        405: "METHOD_NOT_ALLOWED",
+    }
+
     @classmethod
     def install(cls, app: FastAPI) -> None:
         app.add_exception_handler(DomainError, cls.domain_error)
         app.add_exception_handler(RequestValidationError, cls.validation_error)
+        app.add_exception_handler(StarletteHTTPException, cls.http_exception)
+        app.add_exception_handler(Exception, cls.unhandled_error)
 
     @staticmethod
     async def domain_error(_: Request, exc: DomainError) -> JSONResponse:
@@ -91,4 +105,26 @@ class ErrorHandlers:
             "Validation failed",
             "Request is invalid",
             errors,
+        )
+
+    @classmethod
+    async def http_exception(cls, _: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """Starlette's own 404/405/etc as problem+json (ADR-0006)."""
+        code = cls.STATUS_CODES.get(exc.status_code, f"HTTP_{exc.status_code}")
+        title = HTTPStatus(exc.status_code).phrase
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        response = Problem.response(exc.status_code, code, title, detail)
+        if exc.headers:
+            response.headers.update(exc.headers)
+        return response
+
+    @staticmethod
+    async def unhandled_error(_: Request, exc: Exception) -> JSONResponse:
+        """Last resort: never leak internals (ADR-0006)."""
+        logger.error("unhandled exception", exc_info=exc)
+        return Problem.response(
+            500,
+            "INTERNAL_ERROR",
+            "Internal Server Error",
+            "An unexpected error occurred",
         )
