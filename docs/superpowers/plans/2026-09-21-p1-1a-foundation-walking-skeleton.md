@@ -2887,7 +2887,7 @@ class TenantDatabaseRouter:
 
 from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailableError
 
-__all__ = ["TenantDatabaseRouter", "TenantUnavailable"]
+__all__ = ["TenantDatabaseRouter", "TenantUnavailableError"]
 ```
 
 - [ ] **Step 5: Run tests**
@@ -3789,7 +3789,7 @@ __all__ = [
     "TenantContextService",
     "TenantDatabaseProvider",
     "TenantDatabaseRouter",
-    "TenantUnavailable",
+    "TenantUnavailableError",
 ]
 ```
 
