@@ -109,13 +109,13 @@ erp/modules/platform/
   repository.py                CompanyRepository, AuditEventRepository
   schemas.py                   TenantChoiceOut, CompanyOut, CompanyPage
   provisioning.py              TenantDatabaseAdmin, TenantMigrator, TenantProvisioner, …
-  tenant_db.py                 TenantDatabaseRouter, TenantUnavailable
+  tenant_db.py                 TenantDatabaseRouter, TenantUnavailableError
   context.py                   RequestContext, TenantChoice, TenantContextService
   dependencies.py              TenantContextProvider, TenantDatabaseProvider, ModuleGuard
   service.py                   CompanyService
   controller.py                MeController, CompanyController
   audit.py                     Redactor, AuditTrail
-  module_state.py              TenantModules, ModuleDisabled, ModuleChangeRejected
+  module_state.py              TenantModules, ModuleDisabledError, ModuleChangeRejectedError
   module.py / interface.py     MODULE manifest / public surface
 erp/modules/integration/
   models.py                    OutboxEvent, ProcessedEvent
@@ -186,6 +186,10 @@ select = ["E", "W", "N", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 72  # PEP 8: comments and docstrings wrap at 72
+
+[tool.ruff.lint.per-file-ignores]
+# Migrations alias MigrationColumns as `cols` for readable column lists.
+"migrations/**" = ["N813"]
 ```
 
 Replace the generated `backend/src/erp/__init__.py` with:
@@ -302,7 +306,7 @@ git commit -m "chore: scaffold backend with controller base and app factory"
 
 **Interfaces:**
 - Produces:
-  - `DomainError(detail, *, code=None)` with subclasses `Unauthenticated` (401), `Forbidden` (403), `NotFound` (404), `Conflict` (409), `ServiceUnavailable` (503).
+  - `DomainError(detail, *, code=None)` with subclasses `UnauthenticatedError` (401), `ForbiddenError` (403), `NotFoundError` (404), `ConflictError` (409), `ServiceUnavailableError` (503).
   - `Problem.response(...)` and `ErrorHandlers.install(app)`.
   - `Money.quantize(amount, currency, rounding=ROUND_HALF_UP)`, `Money.MINOR_UNITS`, `DecimalStr`.
   - `ApiSchema` (snake_case fields ↔ camelCase JSON).
@@ -315,7 +319,7 @@ git commit -m "chore: scaffold backend with controller base and app factory"
 from fastapi.testclient import TestClient
 
 from erp.app import ApplicationFactory
-from erp.core.errors import Conflict
+from erp.core.errors import ConflictError
 from erp.shared.money import DecimalStr
 from erp.shared.schemas import ApiSchema
 
@@ -329,7 +333,7 @@ def _client():
 
     @app.get("/_test/conflict")
     def conflict() -> None:
-        raise Conflict("version mismatch", code="VERSION_CONFLICT")
+        raise ConflictError("version mismatch", code="VERSION_CONFLICT")
 
     @app.post("/_test/echo")
     def echo(payload: PricePayload) -> PricePayload:
@@ -455,23 +459,23 @@ class DomainError(Exception):
             self.code = code
 
 
-class Unauthenticated(DomainError):
+class UnauthenticatedError(DomainError):
     status, code, title = 401, "UNAUTHENTICATED", "Authentication required"
 
 
-class Forbidden(DomainError):
+class ForbiddenError(DomainError):
     status, code, title = 403, "FORBIDDEN", "Forbidden"
 
 
-class NotFound(DomainError):
+class NotFoundError(DomainError):
     status, code, title = 404, "NOT_FOUND", "Not found"
 
 
-class Conflict(DomainError):
+class ConflictError(DomainError):
     status, code, title = 409, "CONFLICT", "Conflict"
 
 
-class ServiceUnavailable(DomainError):
+class ServiceUnavailableError(DomainError):
     status, code, title = 503, "SERVICE_UNAVAILABLE", "Service unavailable"
 
 
@@ -1638,7 +1642,7 @@ git commit -m "feat(platform): registry Tenants, Identities, Memberships"
   - `TenantDatabaseAdmin(locator, *, owner, runtime_roles)` with `url`, `exists`, `create`, `grant_connect`, `bind_owner`.
   - `TenantMigrator(alembic_ini)` with `head_revision()` and `upgrade(url) -> str`.
   - `TenantProvisioner.create(registry, locator, *, owner, runtime_roles, alembic_ini, server="default")` with `.provision(*, account_number, tenant_name) -> UUID`, `.complete(tenant_id) -> str`, `.upgrade_all() -> list[MigrationOutcome]`, `.head_revision()`.
-  - `MigrationOutcome`, `MissingTenantDatabase`.
+  - `MigrationOutcome`, `MissingTenantDatabaseError`.
   - In `tests/support.py`: `OWNER`, `APP`, `RELAY`.
   - Fixtures `locator`, `provisioner`, `owner_connect(database)`, `drop_database(name)`.
 
@@ -1696,7 +1700,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from erp.modules.platform.provisioning import (
-    MissingTenantDatabase,
+    MissingTenantDatabaseError,
     TenantDatabaseAdmin,
 )
 from erp.modules.platform.registry_models import Tenant
@@ -1784,7 +1788,7 @@ def test_a_previously_migrated_database_is_never_recreated(
     )
     drop_database(locator.database_name(tenant_id))
 
-    with pytest.raises(MissingTenantDatabase):
+    with pytest.raises(MissingTenantDatabaseError):
         provisioner.complete(tenant_id)
 
 
@@ -2216,12 +2220,12 @@ from sqlalchemy import URL, Connection, create_engine, text
 from sqlalchemy.pool import NullPool
 
 from erp.core.db import Database, DbCredentials, SqlIdentifier, TenantDbLocator
-from erp.core.errors import NotFound
+from erp.core.errors import NotFoundError
 from erp.modules.platform.registry_models import Tenant
 from erp.modules.platform.registry_repository import TenantRepository
 
 
-class MissingTenantDatabase(RuntimeError):
+class MissingTenantDatabaseError(RuntimeError):
     """A previously migrated tenant database is gone.
 
     Restore it from backup; never re-create it empty.
@@ -2397,12 +2401,12 @@ class TenantProvisioner:
         with self._registry.platform_session() as s:
             tenant = TenantRepository(s).get(tenant_id)
         if tenant is None:
-            raise NotFound("unknown tenant", code="TENANT_NOT_FOUND")
+            raise NotFoundError("unknown tenant", code="TENANT_NOT_FOUND")
         server, database = tenant.database_server, tenant.database_name
         try:
             if not self._admin.exists(server, database):
                 if tenant.schema_revision is not None:
-                    raise MissingTenantDatabase(
+                    raise MissingTenantDatabaseError(
                         f"{database} is missing; restore it from backup "
                         "instead of re-creating it"
                     )
@@ -2561,10 +2565,10 @@ git commit -m "feat(platform): per-tenant database provisioning and upgrade runn
 - Test: `backend/tests/platform/test_tenant_isolation.py`
 
 **Interfaces:**
-- Consumes: `Database`, `TenantDbLocator`, `DbCredentials`, `TenantRepository`, `NotFound`, `ServiceUnavailable`.
+- Consumes: `Database`, `TenantDbLocator`, `DbCredentials`, `TenantRepository`, `NotFoundError`, `ServiceUnavailableError`.
 - Produces:
   - `TenantDatabaseRouter(registry, locator, credentials, *, max_cached=200, **engine_kwargs)` with:
-    - `.for_tenant(tenant_id) -> Database`, which raises `NotFound` (`TENANT_NOT_FOUND`) or `TenantUnavailable` (503)
+    - `.for_tenant(tenant_id) -> Database`, which raises `NotFoundError` (`TENANT_NOT_FOUND`) or `TenantUnavailableError` (503)
     - `.active_tenant_ids()`
     - `.evict(tenant_id)`
     - `.dispose_all()`
@@ -2648,10 +2652,10 @@ import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from erp.core.errors import NotFound
+from erp.core.errors import NotFoundError
 from erp.modules.platform.models import Company, DatabaseOwner
 from erp.modules.platform.registry_models import Tenant
-from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailable
+from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailableError
 from support import APP
 
 
@@ -2731,7 +2735,7 @@ def test_router_evicts_least_recently_used_pools(registry, locator, provisioned)
 
 
 def test_unknown_tenant_is_not_found(router):
-    with pytest.raises(NotFound):
+    with pytest.raises(NotFoundError):
         router.for_tenant(uuid4())
 
 
@@ -2746,7 +2750,7 @@ def test_tenant_without_ready_database_is_unavailable(router, registry):
         s.flush()
         tenant_id = tenant.tenant_id
 
-    with pytest.raises(TenantUnavailable):
+    with pytest.raises(TenantUnavailableError):
         router.for_tenant(tenant_id)
 ```
 
@@ -2790,11 +2794,11 @@ from typing import Any, ClassVar
 from uuid import UUID
 
 from erp.core.db import Database, DbCredentials, TenantDbLocator
-from erp.core.errors import NotFound, ServiceUnavailable
+from erp.core.errors import NotFoundError, ServiceUnavailableError
 from erp.modules.platform.registry_repository import TenantRepository
 
 
-class TenantUnavailable(ServiceUnavailable):
+class TenantUnavailableError(ServiceUnavailableError):
     code = "TENANT_UNAVAILABLE"
 
 
@@ -2870,9 +2874,9 @@ class TenantDatabaseRouter:
         with self._registry.platform_session() as s:
             tenant = TenantRepository(s).get(tenant_id)
         if tenant is None:
-            raise NotFound("unknown tenant", code="TENANT_NOT_FOUND")
+            raise NotFoundError("unknown tenant", code="TENANT_NOT_FOUND")
         if tenant.database_status != "ready":
-            raise TenantUnavailable("the tenant database is not available")
+            raise TenantUnavailableError("the tenant database is not available")
         return tenant.database_server, tenant.database_name
 ```
 
@@ -2881,7 +2885,7 @@ class TenantDatabaseRouter:
 ```python
 """Public surface of the platform module; import only from here."""
 
-from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailable
+from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailableError
 
 __all__ = ["TenantDatabaseRouter", "TenantUnavailable"]
 ```
@@ -2989,7 +2993,7 @@ def make_token(signing_key: rsa.RSAPrivateKey) -> Callable[..., str]:
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from erp.core.errors import Unauthenticated
+from erp.core.errors import UnauthenticatedError
 from erp.core.security import TokenVerifier
 from support import TEST_ISSUER
 
@@ -3022,12 +3026,12 @@ def test_valid_token_is_accepted(verifier, make_token):
     ],
 )
 def test_invalid_tokens_are_rejected(verifier, make_token, overrides):
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(UnauthenticatedError):
         verifier.verify(make_token(**overrides))
 
 
 def test_garbage_is_rejected(verifier):
-    with pytest.raises(Unauthenticated):
+    with pytest.raises(UnauthenticatedError):
         verifier.verify("not-a-jwt")
 
 
@@ -3058,7 +3062,7 @@ from typing import Any, ClassVar
 
 import jwt
 
-from erp.core.errors import Unauthenticated
+from erp.core.errors import UnauthenticatedError
 
 KeyResolver = Callable[[str], Any]
 
@@ -3103,7 +3107,7 @@ class TokenVerifier:
         try:
             algorithm = jwt.get_unverified_header(token).get("alg")
             if algorithm not in self._algorithms:
-                raise Unauthenticated("token algorithm is not allowed")
+                raise UnauthenticatedError("token algorithm is not allowed")
             claims = jwt.decode(
                 token,
                 self._key_resolver(token),
@@ -3114,7 +3118,7 @@ class TokenVerifier:
                 options={"require": self.REQUIRED_CLAIMS},
             )
         except jwt.PyJWTError as exc:
-            raise Unauthenticated("invalid access token") from exc
+            raise UnauthenticatedError("invalid access token") from exc
         return VerifiedToken(
             issuer=claims["iss"], subject=claims["sub"], claims=claims
         )
@@ -3375,7 +3379,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from erp.core.db import Database
-from erp.core.errors import Unauthenticated
+from erp.core.errors import UnauthenticatedError
 from erp.core.security import TokenVerifier, VerifiedToken
 
 BEARER = HTTPBearer(auto_error=False)
@@ -3402,7 +3406,7 @@ class Authentication:
         verifier: Annotated[TokenVerifier, Depends(RequestState.verifier)],
     ) -> VerifiedToken:
         if credentials is None:
-            raise Unauthenticated("missing bearer token")
+            raise UnauthenticatedError("missing bearer token")
         return verifier.verify(credentials.credentials)
 ```
 
@@ -3502,7 +3506,7 @@ from fastapi import Depends
 
 from erp.core.db import Database
 from erp.core.deps import RequestState
-from erp.core.errors import DomainError, Forbidden
+from erp.core.errors import DomainError, ForbiddenError
 from erp.core.security import VerifiedToken
 from erp.modules.platform.registry_repository import (
     IdentityRepository,
@@ -3530,7 +3534,7 @@ class ActiveMembership:
     tenant: TenantChoice
 
 
-class TenantSelectionRequired(DomainError):
+class TenantSelectionRequiredError(DomainError):
     status = 400
     code = "TENANT_SELECTION_REQUIRED"
     title = "Tenant selection required"
@@ -3567,18 +3571,18 @@ class TenantContextService:
     ) -> ActiveMembership:
         if requested is None:
             if not memberships:
-                raise Forbidden(
+                raise ForbiddenError(
                     "no active membership", code="TENANT_ACCESS_DENIED"
                 )
             if len(memberships) > 1:
-                raise TenantSelectionRequired(
+                raise TenantSelectionRequiredError(
                     "select a tenant with the X-Tenant-Id header"
                 )
             return memberships[0]
         for membership in memberships:
             if membership.tenant.tenant_id == requested:
                 return membership
-        raise Forbidden(
+        raise ForbiddenError(
             "no active membership for the requested tenant",
             code="TENANT_ACCESS_DENIED",
         )
@@ -3591,7 +3595,7 @@ class TenantContextService:
                 token.issuer, token.subject
             )
         if identity_id is None:
-            raise Forbidden(
+            raise ForbiddenError(
                 "identity is not provisioned", code="IDENTITY_NOT_PROVISIONED"
             )
         with self._registry.platform_session(identity_id=identity_id) as s:
@@ -3777,7 +3781,7 @@ from erp.modules.platform.dependencies import (
     TenantContextProvider,
     TenantDatabaseProvider,
 )
-from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailable
+from erp.modules.platform.tenant_db import TenantDatabaseRouter, TenantUnavailableError
 
 __all__ = [
     "RequestContext",
@@ -4751,7 +4755,7 @@ git commit -m "feat(integration): per-tenant outbox, relay pass, consumer dedup"
   - `InstalledModules.MANIFESTS` and `InstalledModules.catalog()`.
   - `TenantModuleRepository(session)` with `.enabled_keys(tenant_id)` and `.upsert(tenant_id, key, *, is_enabled)`.
   - `TenantModules(registry, catalog)` with `.enabled`, `.require`, `.enable(tenant_id, key, *, with_dependencies=False)` and `.disable`.
-  - `ModuleDisabled` (403 `MODULE_DISABLED`) and `ModuleChangeRejected` (409 `MODULE_CHANGE_REJECTED`).
+  - `ModuleDisabledError` (403 `MODULE_DISABLED`) and `ModuleChangeRejectedError` (409 `MODULE_CHANGE_REJECTED`).
   - `ModuleGuard(module_key)` and `ApplicationFactory(..., catalog=None)`.
 - The 50-app graph is **not** encoded here (pending `docs/plan/module-dependencies.md`).
 
@@ -4826,8 +4830,8 @@ import pytest
 
 from erp.core.modules import ModuleCatalog, ModuleManifest
 from erp.modules.platform.module_state import (
-    ModuleChangeRejected,
-    ModuleDisabled,
+    ModuleChangeRejectedError,
+    ModuleDisabledError,
     TenantModules,
 )
 from erp.modules.platform.registry_models import Tenant
@@ -4866,7 +4870,7 @@ def test_core_modules_are_always_enabled(modules, registry):
 def test_enabling_requires_dependencies_first(modules, registry):
     tenant_id = _tenant(registry)
 
-    with pytest.raises(ModuleChangeRejected, match="catalog, inventory"):
+    with pytest.raises(ModuleChangeRejectedError, match="catalog, inventory"):
         modules.enable(tenant_id, "sales")
 
 
@@ -4884,7 +4888,7 @@ def test_cannot_disable_a_module_enabled_modules_depend_on(modules, registry):
     tenant_id = _tenant(registry)
     modules.enable(tenant_id, "sales", with_dependencies=True)
 
-    with pytest.raises(ModuleChangeRejected, match="sales"):
+    with pytest.raises(ModuleChangeRejectedError, match="sales"):
         modules.disable(tenant_id, "inventory")
 
 
@@ -4899,14 +4903,14 @@ def test_disable_then_re_enable(modules, registry):
 
 
 def test_core_module_cannot_be_disabled(modules, registry):
-    with pytest.raises(ModuleChangeRejected, match="core"):
+    with pytest.raises(ModuleChangeRejectedError, match="core"):
         modules.disable(_tenant(registry), "platform")
 
 
 def test_require_rejects_disabled_modules(modules, registry):
     tenant_id = _tenant(registry)
 
-    with pytest.raises(ModuleDisabled):
+    with pytest.raises(ModuleDisabledError):
         modules.require(tenant_id, "catalog")
     modules.enable(tenant_id, "catalog")
     modules.require(tenant_id, "catalog")
@@ -5238,7 +5242,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from erp.core.db import Database
-from erp.core.errors import Conflict, Forbidden, NotFound
+from erp.core.errors import ConflictError, ForbiddenError, NotFoundError
 from erp.core.modules import ModuleCatalog
 from erp.modules.platform.registry_repository import (
     TenantModuleRepository,
@@ -5246,11 +5250,11 @@ from erp.modules.platform.registry_repository import (
 )
 
 
-class ModuleDisabled(Forbidden):
+class ModuleDisabledError(ForbiddenError):
     code = "MODULE_DISABLED"
 
 
-class ModuleChangeRejected(Conflict):
+class ModuleChangeRejectedError(ConflictError):
     code = "MODULE_CHANGE_REJECTED"
 
 
@@ -5268,7 +5272,7 @@ class TenantModules:
     def require(self, tenant_id: UUID, key: str) -> None:
         if key not in self.enabled(tenant_id):
             name = self._catalog.get(key).name
-            raise ModuleDisabled(
+            raise ModuleDisabledError(
                 f"the {name} module is not enabled for this account"
             )
 
@@ -5287,7 +5291,7 @@ class TenantModules:
             dependencies = self._catalog.dependencies(key)
             missing = [d for d in dependencies if d not in current]
             if missing and not with_dependencies:
-                raise ModuleChangeRejected(
+                raise ModuleChangeRejectedError(
                     f"{key} requires {', '.join(missing)} to be enabled first"
                 )
             newly_enabled = missing + ([] if key in current else [key])
@@ -5298,7 +5302,7 @@ class TenantModules:
 
     def disable(self, tenant_id: UUID, key: str) -> None:
         if self._catalog.get(key).core:
-            raise ModuleChangeRejected(
+            raise ModuleChangeRejectedError(
                 f"{key} is a core module and cannot be disabled"
             )
         with self._registry.tenant_session(tenant_id) as s:
@@ -5307,7 +5311,7 @@ class TenantModules:
             dependents = self._catalog.dependents(key)
             blocking = [d for d in dependents if d in current]
             if blocking:
-                raise ModuleChangeRejected(
+                raise ModuleChangeRejectedError(
                     f"disable {', '.join(blocking)} before {key}"
                 )
             if key in current:
@@ -5322,7 +5326,7 @@ class TenantModules:
     def _lock(session: Session, tenant_id: UUID) -> None:
         """Serialise module changes per tenant."""
         if not TenantRepository(session).lock(tenant_id):
-            raise NotFound("unknown tenant", code="TENANT_NOT_FOUND")
+            raise NotFoundError("unknown tenant", code="TENANT_NOT_FOUND")
 ```
 
 - [ ] **Step 5: Enforce on every module route**
@@ -5345,7 +5349,7 @@ class ModuleGuard:
         modules.require(context.tenant_id, self._module_key)
 ```
 
-Add `ModuleGuard` (from `dependencies`), and `TenantModules`, `ModuleDisabled`, `ModuleChangeRejected` (from `module_state`), to `backend/src/erp/modules/platform/interface.py` and its `__all__`.
+Add `ModuleGuard` (from `dependencies`), and `TenantModules`, `ModuleDisabledError`, `ModuleChangeRejectedError` (from `module_state`), to `backend/src/erp/modules/platform/interface.py` and its `__all__`.
 
 Replace `backend/src/erp/app.py` with:
 
