@@ -7,17 +7,21 @@ docker compose -f deploy/compose.dev.yml up -d --wait
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.pool import NullPool
-from support import OWNER
+from support import APP, OWNER
 
 from erp.core.db import Database, TenantDbLocator
+from erp.modules.platform.models import Company
 from erp.modules.platform.provisioning import TenantProvisioner
+from erp.modules.platform.tenant_db import TenantDatabaseRouter
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REGISTRY_APP_URL = os.environ.get(
@@ -167,3 +171,56 @@ def drop_database(locator: TenantDbLocator):
         engine.dispose()
 
     return _drop
+
+
+@pytest.fixture(scope="session")
+def router(
+    _registry: Database,
+    locator: TenantDbLocator,
+    provisioner: TenantProvisioner,
+) -> Iterator[TenantDatabaseRouter]:
+    tenant_router = TenantDatabaseRouter(_registry, locator, APP)
+    yield tenant_router
+    tenant_router.dispose_all()  # before the databases are dropped
+
+
+@pytest.fixture(scope="session")
+def provisioned(provisioner: TenantProvisioner) -> tuple[UUID, UUID]:
+    """Tenants A (100001) and B (100002), each with its own database."""
+    a = provisioner.provision(account_number="100001", tenant_name="Alpha Traders")
+    b = provisioner.provision(account_number="100002", tenant_name="Beta Foods")
+    return a, b
+
+
+@dataclass(frozen=True)
+class SeededTenants:
+    a: UUID
+    b: UUID
+    company_a: UUID
+    company_b: UUID
+
+
+@pytest.fixture
+def two_tenants(provisioned, router, locator, registry) -> Iterator[SeededTenants]:
+    """One company per tenant, written as erp_app; emptied after."""
+    a, b = provisioned
+    names = ("Alpha Traders Ltd", "Beta Foods Ltd")
+    company_ids = []
+    for tenant_id, name in zip((a, b), names, strict=True):
+        with router.for_tenant(tenant_id).tenant_session(tenant_id) as s:
+            company = Company(
+                tenant_id=tenant_id,
+                company_name=name,
+                country_code="BD",
+                base_currency="BDT",
+                time_zone="Asia/Dhaka",
+            )
+            s.add(company)
+            s.flush()
+            company_ids.append(company.company_id)
+    yield SeededTenants(a, b, company_ids[0], company_ids[1])
+    for tenant_id in (a, b):
+        url = locator.url("default", locator.database_name(tenant_id), OWNER)
+        engine = create_engine(url, poolclass=NullPool)
+        truncate_tables(engine, exclude=frozenset({'platform."DatabaseOwners"'}))
+        engine.dispose()
