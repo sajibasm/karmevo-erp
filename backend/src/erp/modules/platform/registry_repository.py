@@ -3,9 +3,10 @@
 from uuid import UUID
 
 from sqlalchemy import select, text, update
+from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session
 
-from erp.modules.platform.registry_models import Tenant
+from erp.modules.platform.registry_models import Identity, Membership, Tenant
 
 
 class TenantRepository:
@@ -67,3 +68,47 @@ class TenantRepository:
         if revision is not None:
             values[Tenant.schema_revision] = revision
         self._session.execute(update(Tenant).where(Tenant.tenant_id == tenant_id).values(values))
+
+
+class IdentityRepository:
+    """All queries on registry "Identities"."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def find_id(self, issuer: str, subject: str) -> UUID | None:
+        return self._session.scalar(
+            select(Identity.identity_id).where(
+                Identity.issuer == issuer, Identity.subject == subject
+            )
+        )
+
+
+class MembershipRepository:
+    """All queries on registry "Memberships".
+
+    Reads rely on the identity context of the session (RLS).
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def active_staff_tenants(self) -> list[Row]:
+        """Active staff memberships with their tenant's name/number."""
+        return list(
+            self._session.execute(
+                select(
+                    Membership.membership_id,
+                    Tenant.tenant_id,
+                    Tenant.account_number,
+                    Tenant.tenant_name,
+                )
+                .join(Tenant, Tenant.tenant_id == Membership.tenant_id)
+                .where(
+                    Membership.membership_kind == "staff",
+                    Membership.membership_status == "active",
+                    Tenant.tenant_status == "active",
+                )
+                .order_by(Tenant.account_number)
+            )
+        )
