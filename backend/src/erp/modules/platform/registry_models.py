@@ -82,3 +82,21 @@ class Membership(RegistryBase):
         "membershipStatus", String(16), server_default="active"
     )
     created_at: Mapped[datetime] = Columns.created_at()
+
+
+class TenantModule(RegistryBase):
+    """Whether a tenant enabled an optional module.
+
+    Core modules have no row; they are always on. Disabling only flips
+    isEnabled; the module's data is untouched (PLT-05).
+    """
+
+    __tablename__ = "TenantModules"
+    __table_args__ = (SCHEMA,)
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        "tenantId", ForeignKey("registry.Tenants.tenantId"), primary_key=True
+    )
+    module_key: Mapped[str] = mapped_column("moduleKey", String(64), primary_key=True)
+    is_enabled: Mapped[bool] = mapped_column("isEnabled")
+    changed_at: Mapped[datetime] = Columns.timestamp("changedAt")

@@ -2,11 +2,17 @@
 
 from uuid import UUID
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session
 
-from erp.modules.platform.registry_models import Identity, Membership, Tenant
+from erp.modules.platform.registry_models import (
+    Identity,
+    Membership,
+    Tenant,
+    TenantModule,
+)
 
 
 class TenantRepository:
@@ -112,3 +118,37 @@ class MembershipRepository:
                 .order_by(Tenant.account_number)
             )
         )
+
+
+class TenantModuleRepository:
+    """All queries on registry "TenantModules"."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def enabled_keys(self, tenant_id: UUID) -> set[str]:
+        return set(
+            self._session.scalars(
+                select(TenantModule.module_key).where(
+                    TenantModule.tenant_id == tenant_id,
+                    TenantModule.is_enabled.is_(True),
+                )
+            )
+        )
+
+    def upsert(self, tenant_id: UUID, key: str, *, is_enabled: bool) -> None:
+        statement = (
+            insert(TenantModule)
+            .values(
+                {
+                    TenantModule.tenant_id: tenant_id,
+                    TenantModule.module_key: key,
+                    TenantModule.is_enabled: is_enabled,
+                }
+            )
+            .on_conflict_do_update(
+                index_elements=["tenantId", "moduleKey"],
+                set_={"isEnabled": is_enabled, "changedAt": func.now()},
+            )
+        )
+        self._session.execute(statement)
