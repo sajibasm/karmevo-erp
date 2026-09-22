@@ -4,6 +4,7 @@ Database tests need the dev stack:
 docker compose -f deploy/compose.dev.yml up -d --wait
 """
 
+import json
 import os
 import time
 from collections.abc import Callable, Iterator
@@ -284,3 +285,16 @@ def make_token(signing_key: rsa.RSAPrivateKey) -> Callable[..., str]:
         return jwt.encode(claims, key or signing_key, algorithm=algorithm)
 
     return _make
+
+
+@pytest.fixture
+def cli_env(monkeypatch):
+    """Point erp.cli at the test registry and tenant-DB prefix."""
+    from erp.core.config import Settings
+
+    monkeypatch.setenv("ERP_REGISTRY_DATABASE_URL", REGISTRY_APP_URL)
+    monkeypatch.setenv("ERP_TENANT_DB_PREFIX", TENANT_DB_PREFIX)
+    monkeypatch.setenv("ERP_TENANT_DB_SERVERS", json.dumps(TENANT_DB_SERVERS))
+    Settings.load.cache_clear()
+    yield
+    Settings.load.cache_clear()

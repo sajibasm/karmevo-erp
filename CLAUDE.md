@@ -2,11 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repository state
+## Commands
 
-This is a greenfield project. The only source of truth is `ERP_Coding_Agent_Requirements.md` (v2.3), the product scope and engineering brief for a multi-tenant ERP + commerce platform. No code, build tooling, tests or CI exist yet. When those are added, update this file with the real build/lint/test commands (including how to run a single test) and remove this note.
+Prerequisites: Docker, `uv` (`brew install uv`). Copy `deploy/.env.example` to `deploy/.env` and pin `KEYCLOAK_VERSION`.
 
-The implementation plan the spec asks for (§25, §35) is in `docs/plan/00-implementation-plan.md`, with ADRs in `docs/adr/` and the traceability matrix in `docs/plan/traceability.md`. Implementation starts with `docs/superpowers/plans/2026-09-21-p1-1a-foundation-walking-skeleton.md`. Do not claim completion, fabricate test results, build shallow stub screens/mock endpoints, or deploy externally without authorization.
+- `make dev-up` / `make dev-down`: Postgres 18 (port 55432) + Keycloak (port 8180, realm `staff`)
+- `make migrate`: registry migrations (`alembic -n registry upgrade head`), then every ready tenant DB (`python -m erp.cli upgrade-tenants`)
+- `make provision-demo`, or `cd backend && uv run python -m erp.cli provision-tenant --account-number N --name NAME`: create a tenant and its own database
+- `cd backend && uv run python -m erp.cli enable-module --tenant <uuid> --module <key> [--with-dependencies]` (and `disable-module`)
+- `make test`: full backend suite. It uses `erp_registry_test` plus throwaway `erp_test_t_*` tenant DBs and needs `make dev-up`.
+- Single test: `cd backend && uv run pytest tests/platform/test_tenant_isolation.py::test_each_tenant_is_routed_to_its_own_database -v`
+- `make lint`: ruff (PEP 8) check + format check + import-linter contracts
+- `make api`: run the API at http://localhost:8010 (`/healthz`, `/readyz`, `/docs`); override the port with `make api API_PORT=...`
+- New tenant-DB migration: add a file under `backend/migrations/tenant/versions/`. It must be expand/contract compatible, because tenant DBs are upgraded one by one. Registry migrations go under `backend/migrations/registry/versions/`.
+- In `psql`, quote CamelCase names: `select "tenantName" from registry."Tenants";`
+
+The implementation plan is `docs/plan/00-implementation-plan.md`, ADRs are in `docs/adr/`, the traceability matrix is `docs/plan/traceability.md`, and detailed slice plans are in `docs/superpowers/plans/`.
 
 ## Working with the spec
 

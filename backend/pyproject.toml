@@ -25,6 +25,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "import-linter>=2.15",
     "pytest>=9.1.1",
     "ruff>=0.16.8",
 ]
@@ -50,3 +51,18 @@ max-doc-length = 72  # PEP 8: comments and docstrings wrap at 72
 [tool.ruff.lint.per-file-ignores]
 # Migrations alias MigrationColumns as `cols` for readable column lists.
 "migrations/**" = ["N813"]
+
+[tool.importlinter]
+root_package = "erp"
+
+[[tool.importlinter.contracts]]
+name = "core does not depend on shared or business modules"
+type = "forbidden"
+source_modules = ["erp.core"]
+forbidden_modules = ["erp.modules", "erp.shared"]
+
+[[tool.importlinter.contracts]]
+name = "shared does not depend on business modules"
+type = "forbidden"
+source_modules = ["erp.shared"]
+forbidden_modules = ["erp.modules"]

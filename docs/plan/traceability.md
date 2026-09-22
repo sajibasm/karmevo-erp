@@ -6,19 +6,19 @@ Total IDs: 276
 
 | ID | Requirement (first clause) | Milestone | Implementation | Test evidence | Status |
 |---|---|---|---|---|---|
-| ARC-01 | Organize FastAPI into platform, catalogue, sales, purchasing, inventory, manufacturing, restaurant, tax, fi… | P1.1 | — | — | planned |
+| ARC-01 | Organize FastAPI into platform, catalogue, sales, purchasing, inventory, manufacturing, restaurant, tax, fi… | P1.1 | `erp/core/modules.py`, `erp/module_catalog.py`, `erp/modules/*/module.py` | `tests/core/test_modules.py` | partial |
 | ARC-02 | Keep authoritative pricing, tax, reservations, orders, stock, payroll and accounting logic in the ERP. | P1.1 | — | — | planned |
-| ARC-03 | Use database transactions for business changes requiring atomicity. | P1.1 | — | — | planned |
+| ARC-03 | Use database transactions for business changes requiring atomicity. | P1.1 | `erp/modules/integration/outbox.py` | `tests/outbox/test_outbox.py` | partial |
 | ARC-04 | Separate business runtime from SaaS administration. | P1.1 | — | — | planned |
 | ARC-05 | Extract services only for demonstrated independent scaling, ownership or isolation needs. | P1.1 | — | — | planned |
-| ARC-06 | Version REST APIs and publish OpenAPI schemas. | P1.1 | — | — | planned |
-| TEN-01 | Model tenant/business account, legal company, branch, warehouse and user membership separately. | P1.1 | — | — | planned |
-| TEN-02 | SaaS may use a shared database with tenant-scoped constraints and row-level security. | P1.1 | — | — | planned |
-| TEN-03 | Scope database queries, cache keys, object storage access, jobs, exports, search, sockets, notifications an… | P1.1 | — | — | planned |
+| ARC-06 | Version REST APIs and publish OpenAPI schemas. | P1.1 | `erp/core/errors.py`, `erp/shared/schemas.py`, `erp/modules/platform/controller.py` | `tests/core/test_errors.py`, `tests/shared/test_schemas.py`, `tests/platform/test_context_api.py` | partial |
+| TEN-01 | Model tenant/business account, legal company, branch, warehouse and user membership separately. | P1.1 | `erp/modules/platform/registry_models.py`, `models.py` | `tests/platform/test_registry.py` | partial |
+| TEN-02 | SaaS may use a shared database with tenant-scoped constraints and row-level security. | P1.1 | `erp/modules/platform/provisioning.py`, `tenant_db.py`, `migrations/tenant/*` | `tests/platform/test_provisioning.py`, `tests/platform/test_tenant_isolation.py`, `tests/core/test_db_roles.py` | partial |
+| TEN-03 | Scope database queries, cache keys, object storage access, jobs, exports, search, sockets, notifications an… | P1.1 | `erp/modules/platform/context.py`, `dependencies.py` | `tests/platform/test_context_api.py` | partial |
 | IAM-01 | Keycloak handles authentication, SSO, MFA, reset and federation. | P1.1 | — | — | planned |
-| IAM-02 | Validate issuer, signature, audience, expiry and appropriate token claims; | P1.1 | — | — | planned |
+| IAM-02 | Validate issuer, signature, audience, expiry and appropriate token claims; | P1.1 | `erp/core/security.py` | `tests/core/test_security.py` | partial |
 | IAM-03 | Define realm strategy in an ADR; | P1.1 | — | — | planned |
-| IAM-04 | Enforce permissions on the server as well as the UI. | P1.1 | — | — | planned |
+| IAM-04 | Enforce permissions on the server as well as the UI. | P1.1 | `erp/modules/platform/audit.py` | `tests/platform/test_audit.py` | partial |
 | MOB-01 | Ship one application per supported mobile platform, usable by all clients; | P2.1 | — | — | planned |
 | MOB-02 | Sign-in journey: enter account number -> resolve trusted deployment configuration -> display business ident… | P1.1 (contract) / P2.1 | — | — | planned |
 | MOB-03 | Use Authorization Code with PKCE through the platform authentication session/system browser. | P2.1 | — | — | planned |
@@ -32,8 +32,8 @@ Total IDs: 276
 | PLT-02 | Shared contacts support customer/supplier roles, addresses, tax registrations and contacts without conflati… | P1.2 | — | — | planned |
 | PLT-03 | Products support goods, services, ingredients, prepared stock and manufactured goods; | P1.2 | — | — | planned |
 | PLT-04 | Unit conversion has explicit dimensions and precision. | P1.2 | — | — | planned |
-| PLT-05 | Configurable document numbering, templates, notifications, approvals, custom fields, import/export and audit. | P1.2 | — | — | planned |
-| PLT-06 | Use decimal quantities/money; | P1.2 | — | — | planned |
+| PLT-05 | Configurable document numbering, templates, notifications, approvals, custom fields, import/export and audit. | P1.2 | `erp/modules/platform/module_state.py`, `dependencies.ModuleGuard`, `app.py` | `tests/platform/test_tenant_modules.py`, `tests/platform/test_module_gating.py` | partial |
+| PLT-06 | Use decimal quantities/money; | P1.2 | `erp/shared/money.py` | `tests/shared/test_money.py`, `tests/core/test_errors.py` | partial |
 | INV-01 | Flexible hierarchy: warehouse -> zone -> aisle -> rack -> shelf -> bin. | P1.3 | — | — | planned |
 | INV-02 | Distinguish physical storage, receiving, dispatch, production, transit, quarantine and scrap. | P1.3 | — | — | planned |
 | INV-03 | Stock ledger tracks product variant, company, warehouse/location, quantity/unit, batch/serial, stock status… | P1.3 | — | — | planned |
@@ -101,14 +101,14 @@ Total IDs: 276
 | JOB-01 | Celery executes Python jobs; | P1.1 | — | — | planned |
 | JOB-02 | PostgreSQL stores authoritative job status, progress, attempts and business results. | P1.1 | — | — | planned |
 | JOB-03 | One active scheduler per schedule scope. | P1.1 | — | — | planned |
-| JOB-04 | Outbox publishing can repeat; | P1.1 | — | — | planned |
+| JOB-04 | Outbox publishing can repeat; | P1.1 | `erp/modules/integration/outbox.py` | `tests/outbox/test_outbox.py` | partial |
 | JOB-05 | Go requests ERP-owned jobs through the API. | P1.1 | — | — | planned |
 | INT-01 | Define adapters for payments, banking files, couriers, email/SMS, signing, attendance devices, printers, ta… | P1.1 (contract) / per-adapter milestone | — | — | planned |
 | OPS-01 | Same versioned container images and migrations for SaaS/client hosting. | P1.1 (skeleton) / P1.9 | — | — | planned |
 | OPS-02 | Per-environment secrets, TLS, private data services, least-privilege accounts, restricted CORS and CSRF pro… | P1.1 (skeleton) / P1.9 | — | — | planned |
 | OPS-03 | Document backup ownership, encrypted backups, PostgreSQL point-in-time recovery where supported, file/ident… | P1.9 | — | — | planned |
 | OPS-04 | Structured logs, traces, metrics, health/readiness checks and alerts. | P1.1 (skeleton) / P1.9 | — | — | planned |
-| OPS-05 | Releases include compatibility notes, checksums, migrations, upgrade preflight, backup requirements and rec… | P1.9 | — | — | planned |
+| OPS-05 | Releases include compatibility notes, checksums, migrations, upgrade preflight, backup requirements and rec… | P1.9 | `erp/cli.py` (`Cli` `upgrade-tenants`) | `tests/platform/test_provisioning.py`, `tests/platform/test_cli.py` | partial |
 | OPS-06 | Offline/client-hosted licensing and telemetry are explicit policies. | P1.1 (skeleton) / P1.9 | — | — | planned |
 | OPS-07 | Select supported library versions during implementation using official documentation, then pin dependencies… | P1.1 (pinning) / P1.9 (load tests) | — | — | planned |
 | LIC-01 | Separate authentication (Keycloak), purchased entitlements (licensing) and user authorization (ERP). | P1.1 | — | — | planned |
@@ -145,8 +145,8 @@ Total IDs: 276
 | EXP-03 | Draft -> submitted -> approved/rejected -> posted -> settled, with controlled corrections and resubmission. | P1.7 | — | — | planned |
 | EXP-04 | Link supplier bills, company-card transactions, advances and claims representing the same cost to avoid dup… | P1.7 | — | — | planned |
 | EXP-05 | Add expense_claims, expense_lines, expense_categories, expense_allocations and employee_advances, referenci… | P1.7 | — | — | planned |
-| DB-01 | Default is module-based PostgreSQL schemas with tenant-scoped tables: platform, catalog, inventory, sales,… | P1.1 | — | — | planned |
-| DB-02 | Enforce tenant-qualified uniqueness and foreign keys, company ownership, row-security policy and privileged… | P1.1 | — | — | planned |
+| DB-01 | Default is module-based PostgreSQL schemas with tenant-scoped tables: platform, catalog, inventory, sales,… | P1.1 | `migrations/registry/*`, `migrations/tenant/*` | `tests/core/test_migrations.py`, `tests/platform/test_tenant_isolation.py` | partial |
+| DB-02 | Enforce tenant-qualified uniqueness and foreign keys, company ownership, row-security policy and privileged… | P1.1 | `migrations/registry/*`, `migrations/tenant/*` | `tests/core/test_migrations.py`, `tests/platform/test_tenant_isolation.py` | partial |
 | DB-03 | Commerce storefronts/domains/publications/carts/customer accounts refer to shared catalogue and ERP orders. | P1.1 | — | — | planned |
 | DEV-01 | Shared mobile app supports selected Android warehouse handhelds with integrated 2D scanners, phone camera a… | P1.3 (USB wedge) / P2.3 | — | — | planned |
 | DEV-02 | Explicit mode determines scan action: receiving, transfer, picking, count, loading or dispatch. | P1.3 (web) / P2.3 (native) | — | — | planned |
@@ -288,4 +288,4 @@ Total IDs: 276
 | ID | Requirement | Milestone | Implementation | Test evidence | Status |
 |---|---|---|---|---|---|
 | OWN-01 | Restaurant customer self-service: ordering kiosks (plus spec RES-06 QR table ordering), unattended registered devices, orders through normal pricing/stock/kitchen rules; see `module-dependencies.md` §3b | P1.5 | — | — | planned (open decisions) |
-| OWN-02 | Class-based / object-oriented code structure (controllers, services, repositories as classes); see ADR-0011 | P1.1a onward | — | — | planned (convention pending confirmation) |
+| OWN-02 | Class-based / object-oriented code structure (controllers, services, repositories as classes); see ADR-0011 | P1.1a onward | all of `erp/` (class-based layers) | `tests/core/test_class_based.py` | partial |
