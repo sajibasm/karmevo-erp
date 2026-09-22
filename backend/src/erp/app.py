@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from erp.core.controller import Controller
+from erp.core.errors import ErrorHandlers
 
 
 class HealthController(Controller):
@@ -18,5 +19,6 @@ class ApplicationFactory:
 
     def build(self) -> FastAPI:
         app = FastAPI(title="Karmevo ERP API", version="0.1.0")
+        ErrorHandlers.install(app)
         app.include_router(HealthController().router)
         return app
