@@ -6,14 +6,18 @@ docker compose -f deploy/compose.dev.yml up -d --wait
 
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
+from sqlalchemy.pool import NullPool
+from support import OWNER
 
-from erp.core.db import Database
+from erp.core.db import Database, TenantDbLocator
+from erp.modules.platform.provisioning import TenantProvisioner
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 REGISTRY_APP_URL = os.environ.get(
@@ -89,3 +93,77 @@ def single_connection_registry(
     database = Database(REGISTRY_APP_URL, pool_size=1, max_overflow=0)
     yield database
     database.dispose()
+
+
+TENANT_DB_SERVERS = {"default": os.environ.get("ERP_TEST_TENANT_DB_SERVER", "localhost:55432")}
+TENANT_DB_PREFIX = "erp_test_t_"
+
+
+@pytest.fixture(scope="session")
+def locator() -> TenantDbLocator:
+    return TenantDbLocator(TENANT_DB_SERVERS, database_prefix=TENANT_DB_PREFIX)
+
+
+def _server_admin(locator: TenantDbLocator) -> Engine:
+    return create_engine(
+        locator.url("default", "postgres", OWNER),
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+    )
+
+
+def _drop_test_tenant_databases(locator: TenantDbLocator) -> None:
+    engine = _server_admin(locator)
+    pattern = TENANT_DB_PREFIX.replace("_", r"\_") + "%"
+    with engine.connect() as conn:
+        names = (
+            conn.execute(
+                text("select datname from pg_database where datname like :pattern"),
+                {"pattern": pattern},
+            )
+            .scalars()
+            .all()
+        )
+        for name in names:
+            conn.execute(text(f'DROP DATABASE "{name}"'))
+    engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def provisioner(_registry: Database, locator: TenantDbLocator) -> Iterator[TenantProvisioner]:
+    """Provision real erp_test_t_* databases; dropped at session end."""
+    _drop_test_tenant_databases(locator)  # leftovers from aborted runs
+    yield TenantProvisioner.create(
+        _registry,
+        locator,
+        owner=OWNER,
+        runtime_roles=["erp_app", "erp_relay"],
+        alembic_ini=BACKEND_DIR / "alembic.ini",
+    )
+    _drop_test_tenant_databases(locator)
+
+
+@pytest.fixture(scope="session")
+def owner_connect(locator: TenantDbLocator):
+    @contextmanager
+    def _connect(database: str) -> Iterator[Connection]:
+        url = locator.url("default", database, OWNER)
+        engine = create_engine(url, poolclass=NullPool)
+        try:
+            with engine.begin() as conn:
+                yield conn
+        finally:
+            engine.dispose()
+
+    return _connect
+
+
+@pytest.fixture(scope="session")
+def drop_database(locator: TenantDbLocator):
+    def _drop(name: str) -> None:
+        engine = _server_admin(locator)
+        with engine.connect() as conn:
+            conn.execute(text(f'DROP DATABASE "{name}"'))
+        engine.dispose()
+
+    return _drop

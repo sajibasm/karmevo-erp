@@ -1,6 +1,8 @@
-from collections.abc import Iterator
+import re
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, ClassVar
 from uuid import UUID
 
 from sqlalchemy import URL, create_engine, text
@@ -44,3 +46,48 @@ class Database:
     @classmethod
     def _set_local(cls, session: Session, name: str, value: str) -> None:
         session.execute(cls.SET_LOCAL, {"name": name, "value": value})
+
+
+class SqlIdentifier:
+    """Validate identifiers that cannot be bound as parameters."""
+
+    PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9_]{0,62}")
+
+    @classmethod
+    def safe(cls, value: str) -> str:
+        """Allow only lowercase names (databases, roles, prefixes)."""
+        if not cls.PATTERN.fullmatch(value):
+            raise ValueError(f"unsafe SQL identifier {value!r}")
+        return value
+
+
+@dataclass(frozen=True)
+class DbCredentials:
+    user: str
+    password: str = field(repr=False)
+
+
+class TenantDbLocator:
+    """Name tenant databases and build their URLs (ADR-0002)."""
+
+    def __init__(self, servers: Mapping[str, str], *, database_prefix: str) -> None:
+        self._servers = dict(servers)
+        self._prefix = SqlIdentifier.safe(database_prefix)
+
+    def database_name(self, tenant_id: UUID) -> str:
+        return SqlIdentifier.safe(f"{self._prefix}{tenant_id.hex}")
+
+    def url(self, server: str, database: str, credentials: DbCredentials) -> URL:
+        try:
+            address = self._servers[server]
+        except KeyError:
+            raise ValueError(f"unknown tenant database server {server!r}") from None
+        host, _, port = address.partition(":")
+        return URL.create(
+            "postgresql+psycopg",
+            username=credentials.user,
+            password=credentials.password,
+            host=host,
+            port=int(port) if port else 5432,
+            database=database,
+        )
