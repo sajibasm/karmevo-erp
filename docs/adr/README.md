@@ -15,3 +15,4 @@ Format: Context · Decision · Consequences · Status. Status starts at **Propos
 | 0009 | Module system: independent apps, declared dependencies, per-tenant enablement | Proposed · 50-app dependency graph open |
 | 0010 | Naming: PEP 8 Python, CamelCase database | **Accepted** 2026-09-22 |
 | 0011 | Class-based architecture: controllers, services, repositories; everything in classes | **Accepted** 2026-09-22 |
+| 0012 | Tenant domains: per-tenant subdomains and host routing | **Accepted** 2026-09-23 · slug policy and custom-domain verification open |
